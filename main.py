@@ -1,31 +1,30 @@
-import math
-import random
-import pygame
-import time
+import streamlit as st
 
-pygame.init()
+def render_header():
+    st.title("Amazon Competitor analysis")
+    st.caption("Enter ASIN to get Product details")
 
-Width, Height = 700, 500
-Win = pygame.display.set_mode((Width, Height))
-pygame.display.set_caption("Aim Trainer")
+def render_input():
+ asin = st.text_input("Enter ASIN", placeholder="B0B1L6Z6K8")
+ postal_code = st.text_input("Enter Postal Code", placeholder="M1G3E2")
+ domain = st.selectbox("Select Domain", options=["com", "ca", "co.uk", "de", "fr", "it", "es","in","aed"])
+ return asin.strip(), postal_code.strip(), domain
+
 
 def main():
-    run = True
-    clock = pygame.time.Clock()
+   st.set_page_config(page_title="Amazon Competitor analysis", page_icon="📚")
+   render_header()
+asin, postal_code, domain = render_input()
 
-    while run:
-        # limit fps so the loop doesn't spin too fast
-        clock.tick(60)
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                run = False
 
-        # draw something so the window stays responsive
-        Win.fill((0, 0, 0))
-        pygame.display.flip()
+if st.button("Scarp Product") and asin:
+    with st.spinner("Scraping Product details..."):
+       st.write("Scraping in progress...")
+       #TODO
+       st.success("Product details scraped successfully!")
 
-    pygame.quit()
+
 
 if __name__ == "__main__":
-    main()
+ main()
