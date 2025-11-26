@@ -1,0 +1,18 @@
+Model.py
+
+1) Why use SQLAlchemy ORM rather than others?
+I used SQLAlchemy ORM because it lets me define database tables as Python classes. This makes the code easier to write, understand, and maintain. It also automatically handles SQL query generation and protects against SQL injection. Since my assignment required storing users and messages, the ORM approach made it easier to manage these models as objects rather than using raw SQL.
+
+2) What is declarative_base, Mapped, and mapped_column?
+declarative_base() creates a base class that all my model classes inherit from. It registers them with SQLAlchemy so they map to tables.
+Mapped is a typing helper that shows SQLAlchemy which fields should be mapped to the database.
+mapped_column is used to define each column in the database, including its type and constraints like primary_key or nullable.
+
+3) Why is Mapped used?
+I used Mapped to follow the SQLAlchemy 2.0 style, which improves code readability and helps with type checking. It shows that a class attribute is not just a Python variable but is actually mapped to a column in the database. This helps avoid mistakes and improves editor support like autocompletion.
+
+4) Why was a foreign key used?
+In my design, I optionally used a foreign key on the sender field in the Message model to link it to the username in the User table. This ensures that every message is sent by a registered user and helps maintain data integrity by preventing invalid user references.
+
+5) Why use Base = declarative_base()?
+I used Base = declarative_base() to create the foundation for my ORM models. It’s required for SQLAlchemy to recognize and generate the corresponding database tables from my User and Message classes. All ORM models inherit from this base class.

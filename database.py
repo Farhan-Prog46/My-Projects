@@ -1,32 +1,28 @@
-users = [
-    {
-        "username": "alice",
-        "email": "alice@example.com",
-        "password": "secret",
-        "date_of_birth": "1994-05-21"
-    },
-    {
-        "username": "bob",
-        "email": "bob@example.com",
-        "password": "pass123",
-        "date_of_birth": "1990-11-03"
-    },
-    {
-        "username": "carol",
-        "email": "carol@example.com",
-        "password": "p@ssw0rd",
-        "date_of_birth": "1988-02-14"
-    },
-    {
-        "username": "dave",
-        "email": "dave@example.com",
-        "password": "letmein",
-        "date_of_birth": "2001-07-30"
-    },
-    {
-        "username": "emma",
-        "email": "emma@example.com",
-        "password": "123456",
-        "date_of_birth": "1997-12-09"
-    },
-]
+from Models import Base, User, Message
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import bcrypt
+
+
+engine = create_engine("sqlite:///chat.db", echo=False)
+Session = sessionmaker(bind=engine)
+
+def init_db():
+    Base.metadata.create_all(engine)
+
+def create_user(username: str, password: str) -> bool:
+    session = Session()
+    try:
+        
+        hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+        user = User(username=username, password_hash=hashed_pw)
+        session.add(user)
+        session.commit()
+        return True
+    except Exception:
+        session.rollback()
+        return False
+    finally:
+        session.close()
+
