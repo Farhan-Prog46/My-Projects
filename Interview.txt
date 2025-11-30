@@ -1,5 +1,4 @@
 Model.py
-
 1) Why use SQLAlchemy ORM rather than others?
 I used SQLAlchemy ORM because it lets me define database tables as Python classes. This makes the code easier to write, understand, and maintain. It also automatically handles SQL query generation and protects against SQL injection. Since my assignment required storing users and messages, the ORM approach made it easier to manage these models as objects rather than using raw SQL.
 
@@ -16,3 +15,13 @@ In my design, I optionally used a foreign key on the sender field in the Message
 
 5) Why use Base = declarative_base()?
 I used Base = declarative_base() to create the foundation for my ORM models. It’s required for SQLAlchemy to recognize and generate the corresponding database tables from my User and Message classes. All ORM models inherit from this base class.
+
+
+database.py
+1) Session = sessionmaker(bind=engine) This line creates a factory for database sessions — in other words, it sets up a way for you to open a connection to the database whenever you need it.
+
+2) Base.metadata.create_all(engine) scans all your model classes and creates the matching tables in the database. It’s the standard way to initialize your database schema using SQLAlchemy ORM.
+
+3) bcrypt is used to securely hash and store user passwords so that even if the database is compromised, the original passwords cannot be seen or recovered. It protects against attacks like password theft by making the stored hashes irreversible and unique using random salts.
+
+4) Message is the class that defines what a message looks like in the database. You create an instance of it, add it to the session, and commit it — which saves it as a new row in the messages table.

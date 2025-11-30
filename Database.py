@@ -26,3 +26,21 @@ def create_user(username: str, password: str) -> bool:
     finally:
         session.close()
 
+def authenticate_user(username: str, password: str) -> bool:
+    session = Session()
+    try:
+        user = session.query(User).filter_by(username=username).first()
+        if user and bcrypt.checkpw(password.encode(), user.password_hash.encode()):
+            return True
+        return False
+    finally:
+        session.close()
+
+def store_message(sender:str, content:str):
+    session = Session()
+    try:
+        message = Message(sender= sender, content = content)
+        session.add(message)
+        session.commit()
+    finally:
+        session.close()
