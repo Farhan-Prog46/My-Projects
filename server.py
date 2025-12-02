@@ -1,6 +1,7 @@
 import socket
 import threading
 
+from datetime import datetime
 from Database import init_db, create_user, authenticate_user, store_message
 
 HOST = socket.gethostbyname(socket.gethostname())
@@ -49,12 +50,12 @@ def handle_client(conn: socket.socket, addr) -> None:
                 success = create_user(username_try, password)
                 if success:
                     conn.sendall(
-                        "Account created successfully. Please log in.\n"
+                        "REGISTER_OK|Account created successfully. Please log in.\n"
                         .encode("utf-8")
                     )
                 else:
                     conn.sendall(
-                        "Username already exists or could not be created.\n"
+                        "REGISTER_FAIL|Username already exists or could not be created.\n"
                         .encode("utf-8")
                     )
 
@@ -66,16 +67,16 @@ def handle_client(conn: socket.socket, addr) -> None:
                     username = username_try
                     authenticated = True
                     conn.sendall(
-                        "Login successful.\n Welcome to the chat.\n"
+                        "LOGIN_OK|Login successful. Welcome to the chat.\n"
                         .encode("utf-8")
                     )
                 else:
                     conn.sendall(
-                        "Invalid username or password.\n".encode("utf-8")
+                        "LOGIN_FAIL|Invalid username or password.\n".encode("utf-8")
                     )
             else:
                 conn.sendall(
-                    "Invalid command. Use LOGIN or REGISTER.\n".encode("utf-8")
+                    "ERROR|Invalid command. Use LOGIN or REGISTER.\n".encode("utf-8")
                 )
 
         # --------- ADD CLIENT TO LIST ----------
@@ -104,8 +105,10 @@ def handle_client(conn: socket.socket, addr) -> None:
                     # Save in database
                     store_message(username, text)
                     # Broadcast to everyone
-                    chat_line = f"{username}: {text}\n"
+                    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                    chat_line = f"[{timestamp}] {username}: {text}\n"
                     broadcast(chat_line)
+
 
     except Exception as exc:
         print(f"[ERROR] Problem with client {addr}: {exc}")

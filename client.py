@@ -71,7 +71,8 @@ def main() -> None:
             print("[INFO] Invalid option. Please enter 1 or 2.")
 
     print("\nYou can now start chatting.")
-    print("If you want to quit Type /quit or press Ctrl+C to leave the chat.\n")
+    print("Type messages and press Enter to send.")
+    print("Type /quit or press Ctrl+C to leave.\n")
 
     # --------- START RECEIVER THREAD ----------
     receiver_thread = threading.Thread(
@@ -95,7 +96,7 @@ def main() -> None:
             client_socket.sendall(f"MSG|{text}".encode("utf-8"))
 
     except KeyboardInterrupt:
-        print("\n[INFO] Leaving chat...")
+        print("\n[INFO] Stopped")
         try:
             client_socket.sendall("QUIT".encode("utf-8"))
         except OSError:
