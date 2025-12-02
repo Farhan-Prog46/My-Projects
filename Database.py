@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import bcrypt
 
 
-engine = create_engine("sqlite:///chat.db", echo=False)
+engine = create_engine("sqlite:///chatroom.db", echo=False)
 Session = sessionmaker(bind=engine)
 
 def init_db():
