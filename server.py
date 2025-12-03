@@ -2,13 +2,25 @@ import socket
 import threading
 
 from datetime import datetime
-from Database import init_db, create_user, authenticate_user, store_message
+from Database import (
+    init_db,
+    create_user,
+    authenticate_user,
+    store_message,
+    ban_user,
+    unban_user
+)
 
 HOST = socket.gethostbyname(socket.gethostname())
 PORT = 5050
 MAX_CONNECTIONS = 10
 
-clients = []  # list of (conn, username)
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind((HOST, PORT))
+server.listen(MAX_CONNECTIONS)
+
+# stores (conn, username)
+clients = []
 clients_lock = threading.Lock()
 
 
@@ -20,133 +32,165 @@ def broadcast(message: str) -> None:
             try:
                 conn.sendall(data)
             except OSError:
-                # Ignore broken connections here; they will be cleaned up in handler
                 pass
 
 
+def kick_user(target_username: str):
+    """Temporary kick: disconnect a user WITHOUT banning them."""
+    kicked = None
+    with clients_lock:
+        for conn, username in list(clients):
+            if username == target_username:
+                # remove while holding lock to keep list consistent
+                try:
+                    clients.remove((conn, username))
+                except ValueError:
+                    pass
+                kicked = (conn, username)
+                break
+
+    # perform network IO and broadcasting outside the lock to avoid deadlocks
+    if not kicked:
+        return
+
+    conn, username = kicked
+    try:
+        conn.sendall(b"[SYSTEM] You have been kicked from the chat.\n")
+    except Exception:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+    broadcast(f"[SYSTEM] {username} was kicked from the chat.\n")
+    print(f"[ADMIN] Kicked {username}")
+
+
 def handle_client(conn: socket.socket, addr) -> None:
-    """Handle login/registration and chat for a single client."""
     print(f"[NEW CONNECTION] {addr} connected.")
     username = None
     authenticated = False
 
     try:
-        # --------- LOGIN / REGISTER LOOP ----------
+        # -------- LOGIN / REGISTER LOOP --------
         while not authenticated:
             data = conn.recv(1024)
             if not data:
-                print(f"[DISCONNECT BEFORE LOGIN] {addr}")
                 conn.close()
                 return
 
             message = data.decode("utf-8").strip()
             parts = message.split("|")
-            command = parts[0] if parts else ""
+            command = parts[0]
 
-            if command == "REGISTER" and len(parts) == 3:
-                username_try = parts[1]
-                password = parts[2]
+            # REGISTER
+            if command == "REGISTER" and len(parts) == 4:
+                email = parts[1]
+                username_try = parts[2]
+                password = parts[3]
 
-                success = create_user(username_try, password)
-                if success:
-                    conn.sendall(
-                        "REGISTER_OK|Account created successfully. Please log in.\n"
-                        .encode("utf-8")
-                    )
+                if create_user(email, username_try, password):
+                    conn.sendall(b"REGISTER_OK|Account created successfully. Please log in.\n")
                 else:
-                    conn.sendall(
-                        "REGISTER_FAIL|Username already exists or could not be created.\n"
-                        .encode("utf-8")
-                    )
+                    conn.sendall(b"REGISTER_FAIL|Username or email already exists.\n")
 
+            # LOGIN
             elif command == "LOGIN" and len(parts) == 3:
                 username_try = parts[1]
                 password = parts[2]
 
-                if authenticate_user(username_try, password):
+                result = authenticate_user(username_try, password)
+
+                if result == "Banned":
+                    conn.sendall(b"LOGIN_FAIL|You are banned from this server.\n")
+                    return
+
+                if result is True:
                     username = username_try
                     authenticated = True
-                    conn.sendall(
-                        "LOGIN_OK|Login successful. Welcome to the chat.\n"
-                        .encode("utf-8")
-                    )
+                    conn.sendall(b"LOGIN_OK|Login successful.\n")
                 else:
-                    conn.sendall(
-                        "LOGIN_FAIL|Invalid username or password.\n".encode("utf-8")
-                    )
-            else:
-                conn.sendall(
-                    "ERROR|Invalid command. Use LOGIN or REGISTER.\n".encode("utf-8")
-                )
+                    conn.sendall(b"LOGIN_FAIL|Invalid credentials.\n")
 
-        # --------- ADD CLIENT TO LIST ----------
+            else:
+                conn.sendall(b"ERROR|Invalid command.\n")
+
+        # -------- ADD CLIENT TO LIST --------
         with clients_lock:
             clients.append((conn, username))
 
-        join_msg = f"[SYSTEM] {username} joined the chat.\n"
-        print(join_msg.strip())
-        broadcast(join_msg)
+        broadcast(f"[SYSTEM] {username} joined the chat.\n")
+        print(f"[SYSTEM] {username} joined the chat.")
 
-        # --------- CHAT LOOP ----------
+        # -------- CHAT LOOP --------
         while True:
             data = conn.recv(1024)
             if not data:
-                # Client closed connection
                 break
 
             message = data.decode("utf-8").strip()
 
-            if message == "QUIT":
-                break
+            # ----- ADMIN COMMANDS -----
+            if username == "admin":
 
+                if message.startswith("KICK|"):
+                    target = message.split("|", 1)[1]
+                    kick_user(target)
+                    continue
+
+                if message.startswith("BAN|"):
+                    target = message.split("|", 1)[1]
+                    if ban_user(target):
+                        broadcast(f"[SYSTEM] {target} has been banned.\n")
+                    else:
+                        conn.sendall(b"ERROR|User does not exist.\n")
+                    continue
+
+                if message.startswith("UNBAN|"):
+                    target = message.split("|", 1)[1]
+                    if unban_user(target):
+                        broadcast(f"[SYSTEM] {target} has been unbanned.\n")
+                    else:
+                        conn.sendall(b"ERROR|User does not exist.\n")
+                    continue
+
+            # ----- NORMAL MESSAGE -----
             if message.startswith("MSG|"):
                 text = message[4:].strip()
                 if text:
-                    # Save in database
                     store_message(username, text)
-                    # Broadcast to everyone
                     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                    chat_line = f"[{timestamp}] {username}: {text}\n"
-                    broadcast(chat_line)
+                    broadcast(f"[{timestamp}] {username}: {text}\n")
+                continue
 
+    except Exception as e:
+        print(f"[ERROR] {addr}: {e}")
 
-    except Exception as exc:
-        print(f"[ERROR] Problem with client {addr}: {exc}")
     finally:
-        # Remove from clients list
         with clients_lock:
             clients[:] = [(c, u) for (c, u) in clients if c is not conn]
 
         conn.close()
 
         if username:
-            leave_msg = f"[SYSTEM] {username} left the chat.\n"
-            print(leave_msg.strip())
-            broadcast(leave_msg)
+            broadcast(f"[SYSTEM] {username} left the chat.\n")
+            print(f"[SYSTEM] {username} left the chat.")
 
         print(f"[CONNECTION CLOSED] {addr}")
 
 
-def start_server() -> None:
-    """Initialize DB and start the TCP server."""
+def start_server():
     init_db()
+    print(f"[SERVER STARTED] Listening on {HOST}:{PORT}")
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        server_socket.bind((HOST, PORT))
-        server_socket.listen(MAX_CONNECTIONS)
-        print(f"[STARTED] Chat server listening on {HOST}:{PORT}")
+    try:
+        while True:
+            conn, addr = server.accept()
+            threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
 
-        try:
-            while True:
-                conn, addr = server_socket.accept()
-                thread = threading.Thread(
-                    target=handle_client,
-                    args=(conn, addr),
-                    daemon=True,
-                )
-                thread.start()
-        except KeyboardInterrupt:
-            print("\n[SHUTDOWN] Server is shutting down.")
+    except KeyboardInterrupt:
+        print("\n[SERVER SHUTDOWN] Graceful exit.")
 
 
 if __name__ == "__main__":

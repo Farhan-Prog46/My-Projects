@@ -1,5 +1,5 @@
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, DateTime
+from sqlalchemy.orm import declarative_base, Mapped, mapped_column
+from sqlalchemy import ForeignKey, Integer, String, Text, DateTime, Boolean
 from datetime import datetime
 
 Base = declarative_base()
@@ -10,8 +10,12 @@ class User(Base):
         mapped_column(Integer, primary_key=True)
     username: Mapped[str] = \
         mapped_column(String(50), nullable=False, unique = True)
+    email: Mapped[str] = \
+        mapped_column(String(100), nullable=False, unique = True)
     password_hash: Mapped[str] = \
         mapped_column(String(100), nullable=False)
+    banned: Mapped[bool] = \
+        mapped_column(Boolean, default=False, nullable=False)
     
 class Message(Base):
     __tablename__ = "messages"
