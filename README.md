@@ -9,3 +9,6 @@
 
 ## How to run client (local)
 python3 client.py
+
+## Stop containers if needed
+   docker stop $(docker ps -q)
