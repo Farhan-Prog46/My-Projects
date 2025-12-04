@@ -2,128 +2,123 @@ import socket
 import threading
 import sys
 
-HOST = socket.gethostbyname(socket.gethostname())
+HOST = "localhost"
 PORT = 5050
 
-
-def receive_messages(client_socket):
-    """Receives and prints messages from server."""
+def receive_messages(client_socket: socket.socket) -> None:
+    """Continuously receive and print messages from the server."""
     while True:
         try:
             data = client_socket.recv(1024)
             if not data:
-                print("\n[INFO] Server closed connection.")
+                print("\n[INFO] Server closed the connection.")
                 break
 
-            print("\n" + data.decode(), end="")
+            text = data.decode("utf-8")
+            print("\n" + text, end="")
             print("> ", end="", flush=True)
-
-        except:
+        except Exception:
             break
 
     try:
         client_socket.close()
-    except:
+    except OSError:
         pass
 
     sys.exit(0)
 
-
-def main():
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def main() -> None:
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        client.connect((HOST, PORT))
-    except:
-        print("[ERROR] Could not connect.")
+        client_socket.connect((HOST, PORT))
+    except OSError:
+        print("[ERROR] Could not connect to server.")
         return
 
-    print("[CONNECTED]")
+    print(f"[CONNECTED] Connected to chat server at {HOST}:{PORT}")
 
-    # ---------------- LOGIN / REGISTER ----------------
+    # -------- LOGIN / REGISTER LOOP ----------
     while True:
         try:
-            print("\n1. Login")
-            print("2. Register")
+            print("\n1. Log in")
+            print("2. Create new account")
             print("Press Ctrl+C to exit.")
             choice = input("Choose an option (1 or 2): ").strip()
-
         except KeyboardInterrupt:
-            print("\n[INFO] Exiting client...")
-            client.close()
+            print("\n[INFO] Exiting client.")
+            client_socket.close()
             sys.exit(0)
 
         if choice == "1":
             try:
-                user = input("Username: ").strip()
-                pwd = input("Password: ").strip()
+                username = input("Username: ").strip()
+                password = input("Password: ").strip()
             except KeyboardInterrupt:
-                print("\n[INFO] Exiting client...")
-                client.close()
+                print("\n[INFO] Exiting client.")
+                client_socket.close()
                 sys.exit(0)
 
-            client.sendall(f"LOGIN|{user}|{pwd}".encode())
-            response = client.recv(1024).decode()
-            print(response)
-
+            message = f"LOGIN|{username}|{password}"
+            client_socket.sendall(message.encode("utf-8"))
+            response = client_socket.recv(1024).decode("utf-8")
+            print(response, end="")
             if response.startswith("LOGIN_OK"):
                 break
 
         elif choice == "2":
             try:
                 email = input("Email: ").strip()
-                user = input("Username: ").strip()
-                pwd = input("Password: ").strip()
+                username = input("Choose a username: ").strip()
+                password = input("Choose a password: ").strip()
             except KeyboardInterrupt:
-                print("\n[INFO] Exiting client...")
-                client.close()
+                print("\n[INFO] Exiting client.")
+                client_socket.close()
                 sys.exit(0)
 
-            client.sendall(f"REGISTER|{email}|{user}|{pwd}".encode())
-            print(client.recv(1024).decode())
+            message = f"REGISTER|{email}|{username}|{password}"
+            client_socket.sendall(message.encode("utf-8"))
+            response = client_socket.recv(1024).decode("utf-8")
+            print(response, end="")
 
         else:
-            print("[INFO] Invalid choice.")
+            print("[INFO] Invalid option. Please enter 1 or 2.")
 
-    # ---------------- RECEIVER THREAD ----------------
-    threading.Thread(target=receive_messages, args=(client,), daemon=True).start()
+    print("\nYou are now logged in.")
+    print("Type messages and press Enter to send.")
+    print("Type /quit or press Ctrl+C to leave.\n")
 
-    print("\nCommands:")
-    print("/quit")
-    print("/kick <user>")
-    print("/ban <user>")
-    print("/unban <user>\n")
+    # -------- START RECEIVER THREAD ----------
+    receiver_thread = threading.Thread(
+        target=receive_messages,
+        args=(client_socket,),
+        daemon=True,
+    )
+    receiver_thread.start()
 
-    # ---------------- MAIN SEND LOOP ----------------
-    while True:
-        try:
+    # -------- SEND LOOP ----------
+    try:
+        while True:
             text = input("> ").strip()
-
             if not text:
                 continue
 
             if text.lower() == "/quit":
-                client.close()
+                print("[INFO] Disconnecting.")
+                try:
+                    client_socket.close()
+                except OSError:
+                    pass
                 sys.exit(0)
 
-            if text.startswith("/kick "):
-                client.sendall(f"KICK|{text.split(' ', 1)[1]}".encode())
-                continue
+            client_socket.sendall(f"MSG|{text}".encode("utf-8"))
 
-            if text.startswith("/ban "):
-                client.sendall(f"BAN|{text.split(' ', 1)[1]}".encode())
-                continue
-
-            if text.startswith("/unban "):
-                client.sendall(f"UNBAN|{text.split(' ', 1)[1]}".encode())
-                continue
-
-            client.sendall(f"MSG|{text}".encode())
-
-        except KeyboardInterrupt:
-            print("\n[INFO] Closing connection...")
-            client.close()
-            sys.exit(0)
-
+    except KeyboardInterrupt:
+        print("\n[INFO] Disconnecting.")
+        try:
+            client_socket.close()
+        except OSError:
+            pass
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

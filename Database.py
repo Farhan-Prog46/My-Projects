@@ -3,19 +3,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import bcrypt
 
-
+# SQLite file
 engine = create_engine("sqlite:///chatroom.db", echo=False)
 Session = sessionmaker(bind=engine)
 
 def init_db():
+    """Create tables if they don't exist."""
     Base.metadata.create_all(engine)
 
-def create_user(email: str ,username: str, password: str) -> bool:
+def create_user(email: str, username: str, password: str) -> bool:
+    """Create a new user; return True on success, False if duplicate or error."""
     session = Session()
     try:
-        
         hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
         user = User(email=email, username=username, password_hash=hashed_pw)
         session.add(user)
         session.commit()
@@ -27,53 +27,24 @@ def create_user(email: str ,username: str, password: str) -> bool:
         session.close()
 
 def authenticate_user(username: str, password: str) -> bool:
+    """Return True if username/password are correct, else False."""
     session = Session()
     try:
         user = session.query(User).filter_by(username=username).first()
-        
         if not user:
             return False
-        
-        if user and user.banned:
-            return "Banned"
-        
-        if user and bcrypt.checkpw(password.encode(), user.password_hash.encode()):
+        if bcrypt.checkpw(password.encode(), user.password_hash.encode()):
             return True
         return False
     finally:
         session.close()
 
-def store_message(sender:str, content:str):
+def store_message(sender: str, content: str) -> None:
+    """Store one chat message from sender in the database."""
     session = Session()
     try:
-        message = Message(sender= sender, content = content)
-        session.add(message)
+        msg = Message(sender=sender, content=content)
+        session.add(msg)
         session.commit()
-    finally:
-        session.close()
-
-def ban_user(username: str) -> bool:
-    """Permanently ban a user (set banned=True)."""
-    session = Session()
-    try:
-        user = session.query(User).filter_by(username=username).first()
-        if not user:
-            return False
-        user.banned = True
-        session.commit()
-        return True
-    finally:
-        session.close()
-
-def unban_user(username: str) -> bool:
-    """Remove ban from a user (set banned=False)."""
-    session = Session()
-    try:
-        user = session.query(User).filter_by(username=username).first()
-        if not user:
-            return False
-        user.banned = False
-        session.commit()
-        return True
     finally:
         session.close()

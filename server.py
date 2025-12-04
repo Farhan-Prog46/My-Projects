@@ -1,15 +1,8 @@
 import socket
 import threading
-
 from datetime import datetime
-from Database import (
-    init_db,
-    create_user,
-    authenticate_user,
-    store_message,
-    ban_user,
-    unban_user
-)
+
+from Database import init_db, create_user, authenticate_user, store_message
 
 HOST = socket.gethostbyname(socket.gethostname())
 PORT = 5050
@@ -19,10 +12,9 @@ server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind((HOST, PORT))
 server.listen(MAX_CONNECTIONS)
 
-# stores (conn, username)
+# list of (conn, username)
 clients = []
 clients_lock = threading.Lock()
-
 
 def broadcast(message: str) -> None:
     """Send a text message to all connected clients."""
@@ -32,42 +24,11 @@ def broadcast(message: str) -> None:
             try:
                 conn.sendall(data)
             except OSError:
+                # ignore broken connections
                 pass
 
-
-def kick_user(target_username: str):
-    """Temporary kick: disconnect a user WITHOUT banning them."""
-    kicked = None
-    with clients_lock:
-        for conn, username in list(clients):
-            if username == target_username:
-                # remove while holding lock to keep list consistent
-                try:
-                    clients.remove((conn, username))
-                except ValueError:
-                    pass
-                kicked = (conn, username)
-                break
-
-    # perform network IO and broadcasting outside the lock to avoid deadlocks
-    if not kicked:
-        return
-
-    conn, username = kicked
-    try:
-        conn.sendall(b"[SYSTEM] You have been kicked from the chat.\n")
-    except Exception:
-        pass
-    try:
-        conn.close()
-    except Exception:
-        pass
-
-    broadcast(f"[SYSTEM] {username} was kicked from the chat.\n")
-    print(f"[ADMIN] Kicked {username}")
-
-
 def handle_client(conn: socket.socket, addr) -> None:
+    """Handle login/registration and chat for a single client."""
     print(f"[NEW CONNECTION] {addr} connected.")
     username = None
     authenticated = False
@@ -77,121 +38,114 @@ def handle_client(conn: socket.socket, addr) -> None:
         while not authenticated:
             data = conn.recv(1024)
             if not data:
+                print(f"[DISCONNECT BEFORE LOGIN] {addr}")
                 conn.close()
                 return
 
             message = data.decode("utf-8").strip()
             parts = message.split("|")
-            command = parts[0]
+            command = parts[0] if parts else ""
 
-            # REGISTER
+            # REGISTER|email|username|password
             if command == "REGISTER" and len(parts) == 4:
                 email = parts[1]
                 username_try = parts[2]
                 password = parts[3]
 
-                if create_user(email, username_try, password):
-                    conn.sendall(b"REGISTER_OK|Account created successfully. Please log in.\n")
+                success = create_user(email, username_try, password)
+                if success:
+                    conn.sendall(
+                        "REGISTER_OK|Account created successfully. Please log in.\n"
+                        .encode("utf-8")
+                    )
                 else:
-                    conn.sendall(b"REGISTER_FAIL|Username or email already exists.\n")
+                    conn.sendall(
+                        "REGISTER_FAIL|Email or username already exists.\n"
+                        .encode("utf-8")
+                    )
 
-            # LOGIN
+            # LOGIN|username|password
             elif command == "LOGIN" and len(parts) == 3:
                 username_try = parts[1]
                 password = parts[2]
 
-                result = authenticate_user(username_try, password)
-
-                if result == "Banned":
-                    conn.sendall(b"LOGIN_FAIL|You are banned from this server.\n")
-                    return
-
-                if result is True:
+                if authenticate_user(username_try, password):
                     username = username_try
                     authenticated = True
-                    conn.sendall(b"LOGIN_OK|Login successful.\n")
+                    conn.sendall("LOGIN_OK|Login successful.\n".encode("utf-8"))
                 else:
-                    conn.sendall(b"LOGIN_FAIL|Invalid credentials.\n")
-
+                    conn.sendall(
+                        "LOGIN_FAIL|Invalid username or password.\n".encode("utf-8")
+                    )
             else:
-                conn.sendall(b"ERROR|Invalid command.\n")
+                conn.sendall(
+                    "ERROR|Invalid command. Use LOGIN or REGISTER.\n".encode("utf-8")
+                )
 
         # -------- ADD CLIENT TO LIST --------
         with clients_lock:
             clients.append((conn, username))
 
-        broadcast(f"[SYSTEM] {username} joined the chat.\n")
-        print(f"[SYSTEM] {username} joined the chat.")
+        join_msg = f"[SYSTEM] {username} joined the chat.\n"
+        print(join_msg.strip())
+        broadcast(join_msg)
 
         # -------- CHAT LOOP --------
         while True:
             data = conn.recv(1024)
             if not data:
-                break
+                break  # client disconnected
 
             message = data.decode("utf-8").strip()
 
-            # ----- ADMIN COMMANDS -----
-            if username == "admin":
-
-                if message.startswith("KICK|"):
-                    target = message.split("|", 1)[1]
-                    kick_user(target)
-                    continue
-
-                if message.startswith("BAN|"):
-                    target = message.split("|", 1)[1]
-                    if ban_user(target):
-                        broadcast(f"[SYSTEM] {target} has been banned.\n")
-                    else:
-                        conn.sendall(b"ERROR|User does not exist.\n")
-                    continue
-
-                if message.startswith("UNBAN|"):
-                    target = message.split("|", 1)[1]
-                    if unban_user(target):
-                        broadcast(f"[SYSTEM] {target} has been unbanned.\n")
-                    else:
-                        conn.sendall(b"ERROR|User does not exist.\n")
-                    continue
-
-            # ----- NORMAL MESSAGE -----
+            # normal chat message: MSG|text
             if message.startswith("MSG|"):
                 text = message[4:].strip()
                 if text:
+                    # store in DB
                     store_message(username, text)
+                    # broadcast
                     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                    broadcast(f"[{timestamp}] {username}: {text}\n")
+                    chat_line = f"[{timestamp}] {username}: {text}\n"
+                    broadcast(chat_line)
                 continue
 
-    except Exception as e:
-        print(f"[ERROR] {addr}: {e}")
+    except Exception as exc:
+        print(f"[ERROR] Problem with client {addr}: {exc}")
 
     finally:
+        # remove from clients list
         with clients_lock:
             clients[:] = [(c, u) for (c, u) in clients if c is not conn]
 
-        conn.close()
+        try:
+            conn.close()
+        except OSError:
+            pass
 
         if username:
-            broadcast(f"[SYSTEM] {username} left the chat.\n")
-            print(f"[SYSTEM] {username} left the chat.")
+            leave_msg = f"[SYSTEM] {username} left the chat.\n"
+            print(leave_msg.strip())
+            broadcast(leave_msg)
 
         print(f"[CONNECTION CLOSED] {addr}")
 
-
-def start_server():
+def start_server() -> None:
+    """Initialize DB and start the TCP server."""
     init_db()
     print(f"[SERVER STARTED] Listening on {HOST}:{PORT}")
 
     try:
         while True:
             conn, addr = server.accept()
-            threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
-
+            thread = threading.Thread(
+                target=handle_client,
+                args=(conn, addr),
+                daemon=True,
+            )
+            thread.start()
     except KeyboardInterrupt:
         print("\n[SERVER SHUTDOWN] Graceful exit.")
-
 
 if __name__ == "__main__":
     start_server()
